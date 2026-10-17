@@ -1,85 +1,86 @@
-import { Calculator as CalculatorIcon, FlaskConical, Moon, Settings as SettingsIcon, Sun } from 'lucide-react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session, SupabaseClient } from '@supabase/supabase-js'
+import { Calculator as CalculatorIcon, LogOut, Puzzle, Settings as SettingsIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Account } from '@/components/Account'
+import { AuthLayout } from '@/auth/AuthLayout'
+import { LoginPage } from '@/auth/LoginPage'
+import { NewPasswordPage } from '@/auth/NewPasswordPage'
+import { useAuth } from '@/auth/useAuth'
+import { Button } from '@/components/button'
 import { Credits } from '@/components/Credits'
+import { DevNotice } from '@/components/DevNotice'
+import { Logos } from '@/components/Logos'
+import { ThemeToggle } from '@/components/ThemeToggle'
+import { fetchGroupConfig, fetchMyRole, ROLE_LABELS, saveGroupConfig, type Role } from '@/group/api'
+import { routeHref, useRoute, type Route } from '@/lib/router'
 import { supabase } from '@/lib/supabase'
-import { useTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
+import { SettingsPage } from '@/pages/SettingsPage'
 import { Calculator } from '@/stage/Calculator'
-import { fetchCloudConfig, saveCloudConfig } from '@/stage/cloud'
 import type { StageConfig } from '@/stage/model'
-import { Settings } from '@/stage/Settings'
-import { loadConfig, saveConfig } from '@/stage/storage'
+import { Settings as NivtecParts } from '@/stage/Settings'
 
-type Tab = 'calculator' | 'settings'
+const NAV: { route: Route; label: string; icon: typeof CalculatorIcon; adminOnly?: boolean }[] = [
+  { route: 'calculator', label: 'Kalkulačka', icon: CalculatorIcon },
+  { route: 'nivtec', label: 'Nivtec diely', icon: Puzzle, adminOnly: true },
+  { route: 'settings', label: 'Nastavenie', icon: SettingsIcon },
+]
 
-/** Logá v hlavičke: RigTrack (aplikácia, z ktorej kalkulačka pochádza) a JEF. */
-function Logos() {
+function Loading() {
+  return <p className="p-6 text-center text-sm text-muted-foreground">Načítavam…</p>
+}
+
+/** Prihlásený, ale nie je v skupine (napr. ho admin odobral). */
+function NoAccess({ client, email }: { client: SupabaseClient; email: string | undefined }) {
   return (
-    <div className="flex items-center gap-2">
-      <img src="./logos/rigtrack.svg" alt="RigTrack" className="size-10 rounded-xl" />
-      <img src="./logos/jef-tile.png" alt="JEF Production" className="size-10 rounded-xl" />
-    </div>
+    <AuthLayout title="Bez prístupu">
+      <div className="flex flex-col gap-4 text-sm">
+        <p>
+          Účet <strong>{email}</strong> nie je v skupine. Požiadajte admina, aby vás pridal.
+        </p>
+        <Button variant="outline" onClick={() => void client.auth.signOut()}>
+          Odhlásiť sa
+        </Button>
+      </div>
+    </AuthLayout>
   )
 }
 
-export function App() {
-  const { theme, toggle } = useTheme()
-  const [tab, setTab] = useState<Tab>('calculator')
-  const [config, setConfig] = useState(loadConfig)
-  const [session, setSession] = useState<Session | null>(null)
-  // Zvýši sa pri načítaní nastavenia z účtu, aby sa formulár nastavenia znova naplnil.
-  const [loaded, setLoaded] = useState(0)
-  const [cloudError, setCloudError] = useState(false)
-  const userId = session?.user.id
+/** Hlavná časť po prihlásení: kalkulačka, nastavenie a pre admina diely Nivtec. */
+function Main({ client, session }: { client: SupabaseClient; session: Session }) {
+  const route = useRoute()
+  const [role, setRole] = useState<Role | null | undefined>(undefined)
+  const [config, setConfig] = useState<StageConfig | null>(null)
+  const [failed, setFailed] = useState(false)
+  // Zvýši sa po uložení, aby sa formulár dielov naplnil uloženými hodnotami.
+  const [saved, setSaved] = useState(0)
 
-  useEffect(() => {
-    if (!supabase) return
-    void supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next))
-    return () => data.subscription.unsubscribe()
-  }, [])
-
-  // Po prihlásení sa použije nastavenie z účtu; kto ešte žiadne nemá, pokračuje s tým z prehliadača.
-  // Po odhlásení sa vráti nastavenie z prehliadača.
   useEffect(() => {
     let active = true
-    if (!supabase || !userId) {
-      setConfig(loadConfig())
-      setLoaded((n) => n + 1)
-      return
-    }
-    fetchCloudConfig(supabase, userId)
-      .then((cloud) => {
+    Promise.all([fetchMyRole(client), fetchGroupConfig(client)])
+      .then(([myRole, groupConfig]) => {
         if (!active) return
-        setCloudError(false)
-        if (cloud) setConfig(cloud)
-        setLoaded((n) => n + 1)
+        setRole(myRole)
+        setConfig(groupConfig)
       })
-      .catch(() => active && setCloudError(true))
+      .catch(() => active && setFailed(true))
     return () => {
       active = false
     }
-  }, [userId])
+  }, [client, session.user.id])
 
-  const save = async (next: StageConfig) => {
-    setConfig(next)
-    if (supabase && userId) {
-      try {
-        await saveCloudConfig(supabase, userId, next)
-        return true
-      } catch {
-        return false
-      }
-    }
-    return saveConfig(next)
-  }
+  if (failed)
+    return (
+      <AuthLayout title="Chyba">
+        <p role="alert" className="text-sm text-destructive">
+          Údaje skupiny sa nepodarilo načítať. Skontrolujte pripojenie; ak ste admin a ešte ste nespustili supabase/migrations/0002_skupina.sql, urobte to.
+        </p>
+      </AuthLayout>
+    )
+  if (role === undefined || !config) return <Loading />
+  if (role === null) return <NoAccess client={client} email={session.user.email} />
 
-  const tabs: { id: Tab; label: string; icon: typeof CalculatorIcon }[] = [
-    { id: 'calculator', label: 'Kalkulačka', icon: CalculatorIcon },
-    { id: 'settings', label: 'Nastavenie', icon: SettingsIcon },
-  ]
+  const isAdmin = role === 'admin'
+  const nav = NAV.filter((item) => !item.adminOnly || isAdmin)
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
@@ -88,66 +89,94 @@ export function App() {
           <Logos />
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Nivtec kalkulačka pódia</h1>
-            <p className="text-sm text-muted-foreground">Dosky, nohy, schody, plachty, zábradlie a výstuhy za pár sekúnd.</p>
+            <p className="text-sm text-muted-foreground">
+              {session.user.email} · {ROLE_LABELS[role]}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2 print:hidden">
-          {supabase && <Account client={supabase} session={session} />}
+          <ThemeToggle />
           <button
             type="button"
-            onClick={toggle}
-            aria-label={theme === 'dark' ? 'Svetlý režim' : 'Tmavý režim'}
-            title={theme === 'dark' ? 'Svetlý režim' : 'Tmavý režim'}
+            onClick={() => void client.auth.signOut()}
+            aria-label="Odhlásiť sa"
+            title="Odhlásiť sa"
             className="flex size-10 items-center justify-center rounded-lg border bg-surface hover:bg-muted"
           >
-            {theme === 'dark' ? <Sun className="size-5" aria-hidden /> : <Moon className="size-5" aria-hidden />}
+            <LogOut className="size-5" aria-hidden />
           </button>
         </div>
       </header>
 
-      <p className="flex items-start gap-2 rounded-xl border border-violet-400/50 bg-violet-100/60 p-3 text-sm dark:bg-violet-950/40 print:hidden">
-        <FlaskConical className="mt-0.5 size-4 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden />
-        <span>
-          <strong>Časť budúcej aplikácie RigTrack, ktorá je vo vývoji.</strong> RigTrack bude evidovať techniku, kufre, výpožičky, servis a eventy; táto
-          kalkulačka je z neho vytiahnutá ako samostatná ukážka. Výsledok si pred stavbou skontrolujte.
-        </span>
-      </p>
-
-      <nav className="flex gap-1 rounded-xl border bg-surface p-1 self-start print:hidden" aria-label="Sekcie">
-        {tabs.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            aria-current={tab === id ? 'page' : undefined}
-            onClick={() => setTab(id)}
-            className={cn('flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-medium', tab === id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
+      <nav className="flex flex-wrap gap-1 self-start rounded-xl border bg-surface p-1 print:hidden" aria-label="Sekcie">
+        {nav.map(({ route: target, label, icon: Icon }) => (
+          <a
+            key={target}
+            href={routeHref(target)}
+            aria-current={route === target ? 'page' : undefined}
+            className={cn('flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-medium', route === target ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
           >
             <Icon className="size-4" aria-hidden />
             {label}
-          </button>
+          </a>
         ))}
       </nav>
 
-      {cloudError && (
-        <p role="alert" className="rounded-xl border border-destructive/40 p-3 text-sm text-destructive">
-          Nastavenie z účtu sa nepodarilo načítať, počíta sa s nastavením z prehliadača. Ak ste ešte nespustili supabase/schema.sql, urobte to.
-        </p>
-      )}
-
       <main className="flex-1">
-        {tab === 'calculator' ? (
-          <Calculator config={config} />
+        {route === 'settings' ? (
+          <SettingsPage client={client} session={session} role={role} />
+        ) : route === 'nivtec' ? (
+          isAdmin ? (
+            <div className="flex flex-col gap-4">
+              <h2 className="text-lg font-semibold">Nivtec diely</h2>
+              <NivtecParts
+                key={saved}
+                initial={config}
+                note="Nastavenie platí pre celú skupinu, upravuje ho len admin."
+                onSave={async (next) => {
+                  try {
+                    await saveGroupConfig(client, next)
+                    setConfig(next)
+                    setSaved((n) => n + 1)
+                    return true
+                  } catch {
+                    return false
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Diely Nivtec upravuje len admin skupiny.</p>
+          )
         ) : (
-          <Settings
-            key={loaded}
-            initial={config}
-            note={userId ? 'Nastavenie sa uloží do vášho účtu a uvidíte ho na každom zariadení.' : 'Nastavenie sa uloží len v tomto prehliadači; po prihlásení sa ukladá do účtu.'}
-            onSave={save}
-          />
+          <div className="flex flex-col gap-4">
+            <DevNotice />
+            <Calculator config={config} />
+          </div>
         )}
       </main>
 
       <Credits className="border-t pt-4" />
     </div>
   )
+}
+
+function WithSupabase({ client }: { client: SupabaseClient }) {
+  const { session, recovery, recovered } = useAuth(client)
+  if (session === undefined) return <Loading />
+  if (session && recovery) return <NewPasswordPage client={client} onDone={recovered} />
+  if (!session) return <LoginPage client={client} />
+  return <Main client={client} session={session} />
+}
+
+export function App() {
+  if (!supabase)
+    return (
+      <AuthLayout title="Chýba pripojenie">
+        <p className="text-sm">
+          Stránka nemá nastavené pripojenie na Supabase (VITE_SUPABASE_URL a VITE_SUPABASE_PUBLISHABLE_KEY). Postup je v README.
+        </p>
+      </AuthLayout>
+    )
+  return <WithSupabase client={supabase} />
 }
