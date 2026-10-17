@@ -113,8 +113,8 @@ VITE_SUPABASE_URL=https://xxxx.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
-Pre GitHub Pages zadaj tie isté dve hodnoty v repozitári ako
-**Settings → Secrets and variables → Actions → Repository secrets** (nie Environment secrets).
+Pre GitHub Pages sú obe hodnoty priamo v [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), Secrets netreba.
+Pri zmene Supabase projektu ich uprav tam.
 
 > Publishable (anon) kľúč je verejný, je v stránke vidieť a to je v poriadku: dáta chráni RLS.
 > **Service role kľúč do stránky ani do GitHubu nikdy nedávaj.**

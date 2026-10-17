@@ -17,19 +17,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Aby build videl hodnoty z Repository aj Environment (github-pages) Secrets alebo Variables.
-    environment: github-pages
+    # Adresa projektu a publishable kľúč sú verejné (sú v každej stránke, ktorá sa na Supabase pripája);
+    # dáta chráni RLS. Service role kľúč sem nikdy nepatrí.
     env:
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_SUPABASE_URL: https://tfpcvcjpjqeudqgcnkdx.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_W1PMRc4ZI7Mzo9TJ1tm-bw_om_YpaE8
     steps:
-      # Bez pripojenia by stránka ukázala len hlášku namiesto prihlásenia; radšej nenasadiť nič.
-      - name: Kontrola Supabase Secrets
-        run: |
-          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ]; then
-            echo "::error::Chýbajú Secrets VITE_SUPABASE_URL alebo VITE_SUPABASE_PUBLISHABLE_KEY (Settings → Secrets and variables → Actions)."
-            exit 1
-          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
