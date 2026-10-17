@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coverLength, DEFAULT_STAGE_CONFIG, legPoints, openSegments, planStage, quantitiesByEquipment, readStageConfig, type StageRequest } from './model'
+import { coverLength, DEFAULT_STAGE_CONFIG, legPoints, openSegments, planStage, quantitiesByEquipment, readStageConfig, stockParts, withPartIds, type StageRequest } from './model'
 
 const config = {
   ...DEFAULT_STAGE_CONFIG,
@@ -14,7 +14,6 @@ const request = (patch: Partial<StageRequest>): StageRequest => ({
   railingSides: [],
   lathSides: [],
   stairs: [],
-  extraDecks: [],
   catwalk: null,
   risers: [],
   stairsToTop: false,
@@ -107,8 +106,9 @@ describe('planStage', () => {
     expect(quantities({ widthM: 2, depthM: 2, orientation: 'deep', lathSides: ['front'], stairs: [{ side: 'front', positionM: 0 }], heightCm: 60 })).toMatchObject({ 'lath-groove-1': 1 })
   })
 
-  it('counts decks added by hand, such as triangles', () => {
-    expect(quantities({ extraDecks: [{ deckId: 'tri', count: 2 }] })).toMatchObject({ 'deck-tri': 2 })
+  it('drops triangles from older saved settings', () => {
+    const stored = { ...DEFAULT_STAGE_CONFIG, decks: [...DEFAULT_STAGE_CONFIG.decks, { id: 'tri', label: 'Trojuholník', widthM: 2, depthM: 1, triangle: true, legs: 3, equipmentId: '' }] }
+    expect(readStageConfig(stored).decks.map((deck) => deck.id)).toEqual(['d2x1', 'd1x1', 'd2x05', 'd1x05'])
   })
 
   it('adds a catwalk that shares legs with the stage and leaves an opening in the stage skirt', () => {
@@ -170,7 +170,36 @@ describe('helpers', () => {
   it('keep valid parts of old or broken settings', () => {
     const read = readStageConfig({ name: 'Bütec', legs: 'zlé', clamp: { equipmentId: 'x', perMeter: 1 } })
     expect(read.name).toBe('Bütec')
-    expect(read.legs).toEqual(DEFAULT_STAGE_CONFIG.legs)
+    expect(read.legs.map((leg) => leg.heightCm)).toEqual(DEFAULT_STAGE_CONFIG.legs.map((leg) => leg.heightCm))
     expect('clamp' in read).toBe(false)
+  })
+})
+
+describe('sklad', () => {
+  it('každý diel dostane jedinečné ID a to sa pri zmene rozmeru nemení', () => {
+    const config = readStageConfig({})
+    const ids = stockParts(config).map((part) => part.id)
+    expect(ids.every(Boolean)).toBe(true)
+    expect(new Set(ids).size).toBe(ids.length)
+    const changed = withPartIds({ ...config, legs: config.legs.map((leg) => (leg.heightCm === 60 ? { ...leg, heightCm: 70 } : leg)) })
+    expect(changed.legs.find((leg) => leg.heightCm === 70)?.equipmentId).toBe('leg:60')
+  })
+
+  it('nový diel s rovnakým rozmerom dostane iné ID', () => {
+    const config = readStageConfig({})
+    const added = withPartIds({ ...config, legs: [...config.legs, { heightCm: 60, equipmentId: '' }] })
+    expect(added.legs.at(-1)?.equipmentId).toBe('leg:60#2')
+  })
+
+  it('zo skladu vyhodí diely, ktoré už nie sú v nastavení', () => {
+    const config = readStageConfig({ stock: { 'leg:60': 20, 'leg:999': 5 } })
+    expect(config.stock).toEqual({ 'leg:60': 20 })
+  })
+
+  it('kalkulačka sčíta potrebu podľa dielu', () => {
+    const config = readStageConfig({})
+    const totals = quantitiesByEquipment(planStage({ widthM: 6, depthM: 4, heightCm: 60, orientation: 'auto', skirtSides: [], railingSides: [], lathSides: [], stairs: [], catwalk: null, risers: [], stairsToTop: false, stairsRailingSides: 0 }, config).lines)
+    expect(totals.get('deck:d2x1')).toBe(12)
+    expect(totals.get('leg:60')).toBe(20)
   })
 })

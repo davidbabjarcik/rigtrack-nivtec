@@ -38,9 +38,15 @@ servisu a eventov). Tu je vytiahnutá samostatne pre našu skupinu.
 - 📋 **Kopírovanie zoznamu** do správy a **tlač**
 - 🔐 **Prihlásenie a skupina:** do aplikácie sa dostanú len pozvaní ľudia; admin pridáva členov a mení roly
 - 🧩 **Nivtec diely (len admin):** vlastné rozmery dosiek, nôh, plachiet či príslušenstva, spoločné pre celú skupinu
+- 📦 **Sklad:** admin zadá, koľko kusov každého dielu firma má; kalkulačka ukáže, čo chýba, a dosky, ktoré nemáme, nepoužije
 - 🌙 Svetlý aj tmavý režim, funguje na mobile
 
 ## Čo je nové
+
+### 1.2.0
+- **Sklad** v Nivtec dieloch: admin zadá počet kusov každého dielu na firme.
+- Kalkulačka má stĺpec **Máme**, vypíše, čo chýba, a menšie dosky s 0 ks nepoužije.
+- Odstránené trojuholníky (dosky navyše) a počet nôh pri doske.
 
 ### 1.1.0
 - Prihlasovacia stránka: prihlásenie, vytvorenie účtu na pozvánku a zabudnuté heslo.

@@ -2,7 +2,7 @@ import { Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Button } from '@/components/button'
 import { Field, SelectField } from '@/components/field'
-import { ACCESSORY_BASES, BASIS_LABELS, DEFAULT_STAGE_CONFIG, newDeckId, PROFILE_LABELS, PROFILES, stageConfigSchema, type Profile, type StageConfig } from './model'
+import { ACCESSORY_BASES, BASIS_LABELS, DEFAULT_STAGE_CONFIG, newDeckId, PROFILE_LABELS, PROFILES, stageConfigSchema, stockParts, withPartIds, type Profile, type StageConfig } from './model'
 import { PartIcon, type PartKind } from './PartIcon'
 
 function NumberField({ label, value, step = 1, onChange }: { label: string; value: number; step?: number; onChange: (value: number) => void }) {
@@ -49,6 +49,50 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
   )
 }
 
+/** Koľko kusov každého dielu má firma; prázdne = nesledovať. Kalkulačka podľa toho ukáže, čo chýba. */
+function StockBlock({ config, onChange }: { config: StageConfig; onChange: (stock: StageConfig['stock']) => void }) {
+  const parts = stockParts(config)
+  const groups = [...new Set(parts.map((part) => part.group))]
+  const setCount = (id: string, text: string) => {
+    const rest = Object.fromEntries(Object.entries(config.stock).filter(([key]) => key !== id))
+    const count = Math.floor(Number(text))
+    onChange(text === '' || !Number.isFinite(count) ? rest : { ...rest, [id]: Math.max(0, count) })
+  }
+  return (
+    <Block
+      icon="accessory"
+      title="Sklad: koľko kusov máme"
+      hint="Zadajte počet kusov každého dielu na firme. Kalkulačka potom ukáže, čo chýba, a menšie dosky, ktoré nemáme (0 ks), nepoužije. Prázdne = nekontrolovať."
+    >
+      <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+        {groups.map((group) => (
+          <div key={group} className="flex flex-col gap-1.5">
+            <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{group}</h3>
+            {parts
+              .filter((part) => part.group === group)
+              .map((part) => (
+                <label key={part.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate">{part.label}</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    step={1}
+                    placeholder="—"
+                    aria-label={`${part.label}: počet kusov`}
+                    className="h-9 w-20 shrink-0 rounded-lg border bg-surface px-2 text-right tabular-nums"
+                    value={config.stock[part.id] ?? ''}
+                    onChange={(event) => setCount(part.id, event.target.value)}
+                  />
+                </label>
+              ))}
+          </div>
+        ))}
+      </div>
+    </Block>
+  )
+}
+
 /** Zmení jeden prvok zoznamu v nastavení. */
 const patchAt = <T,>(list: T[], index: number, patch: Partial<T>) => list.map((item, i) => (i === index ? { ...item, ...patch } : item))
 
@@ -64,7 +108,8 @@ export function Settings({ initial, note, onSave }: { initial: StageConfig; note
   }
   const set = (patch: Partial<StageConfig>) => {
     setSaved(null)
-    setConfig((current) => ({ ...current, ...patch }))
+    // Nové diely hneď dostanú ID, aby sa im dal zadať počet kusov.
+    setConfig((current) => withPartIds({ ...current, ...patch }))
   }
   const parsed = stageConfigSchema.safeParse(config)
 
@@ -73,32 +118,24 @@ export function Settings({ initial, note, onSave }: { initial: StageConfig; note
       <p className="text-sm text-muted-foreground">Upravte rozmery a diely podľa toho, čo máte na sklade. {note}</p>
       <Field label="Názov systému" value={config.name} maxLength={60} onChange={(event) => set({ name: event.target.value })} />
 
+      <StockBlock config={config} onChange={(stock) => set({ stock })} />
+
       <Block
         icon="deck"
         title="Dosky"
-        hint="Prvá obdĺžniková doska je hlavná, menšie dopĺňajú zvyšok (rozmery po 0,5 m). Trojuholníky sa do obdĺžnika neskladajú, v kalkulačke sa pridávajú ručne. Nohy = koľko nôh potrebuje doska, keď stojí samostatne."
+        hint="Prvá doska je hlavná, menšie dopĺňajú zvyšok (rozmery po 0,5 m)."
       >
         {config.decks.map((deck, index) => (
-          <div key={deck.id} className="grid grid-cols-2 items-end gap-2 sm:grid-cols-[1fr_4.5rem_4.5rem_4rem_auto_auto]">
+          <div key={deck.id} className="grid grid-cols-2 items-end gap-2 sm:grid-cols-[1fr_4.5rem_4.5rem_auto]">
             <Field label="Názov" value={deck.label} maxLength={60} onChange={(event) => set({ decks: patchAt(config.decks, index, { label: event.target.value }) })} />
             <NumberField label="Dĺžka (m)" step={0.5} value={deck.widthM} onChange={(widthM) => set({ decks: patchAt(config.decks, index, { widthM }) })} />
             <NumberField label="Šírka (m)" step={0.5} value={deck.depthM} onChange={(depthM) => set({ decks: patchAt(config.decks, index, { depthM }) })} />
-            <NumberField label="Nohy" value={deck.legs} onChange={(legs) => set({ decks: patchAt(config.decks, index, { legs }) })} />
-            <label className="flex h-11 items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4"
-                checked={deck.triangle}
-                onChange={(event) => set({ decks: patchAt(config.decks, index, { triangle: event.target.checked, legs: event.target.checked ? 3 : 4 }) })}
-              />
-              trojuholník
-            </label>
             <RemoveButton label={`Odobrať ${deck.label}`} onClick={() => set({ decks: config.decks.filter((_, i) => i !== index) })} />
           </div>
         ))}
         <AddButton
           label="Pridať dosku"
-          onClick={() => set({ decks: [...config.decks, { id: newDeckId(config.decks), label: '', widthM: 1, depthM: 1, triangle: false, legs: 4, equipmentId: '' }] })}
+          onClick={() => set({ decks: [...config.decks, { id: newDeckId(config.decks), label: '', widthM: 1, depthM: 1, equipmentId: '' }] })}
         />
       </Block>
 
@@ -179,13 +216,11 @@ export function Settings({ initial, note, onSave }: { initial: StageConfig; note
       <Block icon="stairs" title="Schody" hint="Každý stupeň je jedna doska (napr. 1 × 0,5 m), o 20 cm vyšší ako predošlý. Prvý stojí na 4 nohách 20 cm, ďalšie na 2 nohách svojej výšky a 2 schodiskových nohách.">
         <div className="grid gap-3 sm:grid-cols-2">
           <SelectField label="Stupeň z dosky" value={config.stairs.stepDeckId} onChange={(event) => set({ stairs: { ...config.stairs, stepDeckId: event.target.value } })}>
-            {config.decks
-              .filter((deck) => !deck.triangle)
-              .map((deck) => (
-                <option key={deck.id} value={deck.id}>
-                  {deck.label || `${deck.widthM} × ${deck.depthM} m`}
-                </option>
-              ))}
+            {config.decks.map((deck) => (
+              <option key={deck.id} value={deck.id}>
+                {deck.label || `${deck.widthM} × ${deck.depthM} m`}
+              </option>
+            ))}
           </SelectField>
           <NumberField
             label="Spojok na jedny schody"
@@ -231,7 +266,7 @@ export function Settings({ initial, note, onSave }: { initial: StageConfig; note
         <Button
           variant="outline"
           onClick={() => {
-            if (window.confirm('Vrátiť nastavenie na predvolené hodnoty Nivtec?')) set(DEFAULT_STAGE_CONFIG)
+            if (window.confirm('Vrátiť diely na predvolené hodnoty Nivtec? Počty kusov na sklade ostanú.')) set({ ...DEFAULT_STAGE_CONFIG, stock: config.stock })
           }}
         >
           <RotateCcw className="size-4" aria-hidden />

@@ -1,4 +1,4 @@
-import { AlertTriangle, Copy, Plus, Printer, Trash2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Copy, PackageX, Plus, Printer, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/button'
 import { Field, SelectField } from '@/components/field'
@@ -6,10 +6,12 @@ import { cn } from '@/lib/utils'
 import {
   MAX_STAGE_M,
   planStage,
+  quantitiesByEquipment,
   SIDE_LABELS,
   sideLength,
   SIDES,
   fillerDecks,
+  stockParts,
   type Catwalk,
   type Deck,
   type Orientation,
@@ -211,10 +213,13 @@ export function Calculator({ config }: { config: StageConfig }) {
   const [stairs, setStairs] = useState<Stairs[]>([])
   const [laths, setLaths] = useState(false)
   const [lathSides, setLathSides] = useState<Side[]>(['front', 'left', 'right'])
-  const [extraDecks, setExtraDecks] = useState<{ deckId: string; count: number }[]>([])
   const [catwalk, setCatwalk] = useState<Catwalk | null>(null)
   const [risers, setRisers] = useState<Riser[]>([])
   const [fillerIds, setFillerIds] = useState<string[] | null>(null)
+  // Pracuje sa len s tým, čo máme: menšie dosky s 0 ks na sklade sa predvolene nepoužijú.
+  const defaultFillers = fillerDecks(config)
+    .filter((deck) => (config.stock[deck.equipmentId] ?? 1) > 0)
+    .map((deck) => deck.id)
   const [stairsToTop, setStairsToTop] = useState(false)
   const [stairsRailingSides, setStairsRailingSides] = useState(0)
   const [copied, setCopied] = useState(false)
@@ -231,10 +236,9 @@ export function Calculator({ config }: { config: StageConfig }) {
     railingSides: railing ? railingSides : [],
     lathSides: laths ? lathSides : [],
     stairs,
-    extraDecks,
     catwalk,
     risers,
-    fillerIds: fillerIds ?? undefined,
+    fillerIds: fillerIds ?? defaultFillers,
     stairsToTop,
     stairsRailingSides,
   }
@@ -242,8 +246,15 @@ export function Calculator({ config }: { config: StageConfig }) {
 
   const stepDeck = config.decks.find((item) => item.id === config.stairs.stepDeckId)
   const stepWidth = stepDeck ? Math.max(stepDeck.widthM, stepDeck.depthM) : 1
-  const triangles = config.decks.filter((item) => item.triangle)
   const groups = [...new Set(plan.lines.map((line) => line.group))]
+  // Sklad: koľko treba spolu (diel môže byť vo viacerých riadkoch) oproti tomu, čo máme.
+  const totals = quantitiesByEquipment(plan.lines)
+  const have = (equipmentId: string) => (equipmentId ? config.stock[equipmentId] : undefined)
+  const partLabels = new Map(stockParts(config).map((part) => [part.id, part.label]))
+  const missing = [...totals]
+    .filter(([id, need]) => have(id) !== undefined && need > have(id)!)
+    .map(([id, need]) => ({ id, label: partLabels.get(id) ?? id, need, have: have(id)! }))
+  const tracked = Object.keys(config.stock).length > 0
 
   const copy = async () => {
     try {
@@ -279,15 +290,14 @@ export function Calculator({ config }: { config: StageConfig }) {
               <legend className="mb-1.5 text-sm font-medium">Menšie dosky na doplnenie</legend>
               <div className="flex flex-wrap gap-2">
                 {fillerDecks(config).map((deck) => {
-                  const chosen = fillerIds === null || fillerIds.includes(deck.id)
-                  const all = fillerDecks(config).map((item) => item.id)
+                  const chosen = (fillerIds ?? defaultFillers).includes(deck.id)
                   return (
                     <button
                       key={deck.id}
                       type="button"
                       aria-pressed={chosen}
                       onClick={() => {
-                        const current = fillerIds ?? all
+                        const current = fillerIds ?? defaultFillers
                         setFillerIds(chosen ? current.filter((id) => id !== deck.id) : [...current, deck.id])
                       }}
                       className={cn('h-9 rounded-lg border px-3 text-sm font-medium', chosen ? 'bg-primary text-primary-foreground' : 'bg-surface hover:bg-muted')}
@@ -473,46 +483,11 @@ export function Calculator({ config }: { config: StageConfig }) {
               {risers.length === 0 ? 'Pridať rizer' : 'Pridať ďalší rizer'}
             </Button>
           </fieldset>
-
-          {triangles.length > 0 && (
-            <fieldset className="flex flex-col gap-2 rounded-xl border p-3">
-              <legend className="px-1 text-sm font-medium">Dosky navyše (trojuholníky a pod.)</legend>
-              {extraDecks.map((extra, index) => (
-                <div key={index} className="grid grid-cols-[1fr_5rem_auto] items-end gap-2">
-                  <SelectField
-                    label="Doska"
-                    value={extra.deckId}
-                    onChange={(event) => setExtraDecks(extraDecks.map((other, i) => (i === index ? { ...other, deckId: event.target.value } : other)))}
-                  >
-                    {triangles.map((deck) => (
-                      <option key={deck.id} value={deck.id}>
-                        {deck.label}
-                      </option>
-                    ))}
-                  </SelectField>
-                  <Field
-                    label="Počet"
-                    type="number"
-                    min={1}
-                    value={extra.count}
-                    onChange={(event) => setExtraDecks(extraDecks.map((other, i) => (i === index ? { ...other, count: Math.max(0, Math.floor(Number(event.target.value) || 0)) } : other)))}
-                  />
-                  <Button variant="ghost" aria-label={`Odobrať dosku navyše ${index + 1}`} onClick={() => setExtraDecks(extraDecks.filter((_, i) => i !== index))}>
-                    <Trash2 className="size-4" aria-hidden />
-                  </Button>
-                </div>
-              ))}
-              <Button variant="outline" size="sm" className="self-start" onClick={() => setExtraDecks([...extraDecks, { deckId: triangles[0].id, count: 1 }])}>
-                <Plus className="size-4" aria-hidden />
-                Pridať dosku navyše
-              </Button>
-            </fieldset>
-          )}
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
           <div className="rounded-xl border bg-surface p-3">
-            <StageDrawing request={request} plan={plan} mainId={config.decks.find((item) => !item.triangle)?.id ?? ''} />
+            <StageDrawing request={request} plan={plan} mainId={config.decks[0]?.id ?? ''} />
             <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span>
                 {request.widthM} × {request.depthM} m = {request.widthM * request.depthM} m², výška {heightCm} cm
@@ -534,18 +509,41 @@ export function Calculator({ config }: { config: StageConfig }) {
             </p>
           ))}
 
+          {missing.length > 0 && (
+            <div role="alert" className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm">
+              <PackageX className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+              <div>
+                <p className="font-semibold">Na sklade nie je dosť:</p>
+                <ul className="mt-1 list-disc pl-5">
+                  {missing.map((item) => (
+                    <li key={item.id}>
+                      {item.label}: chýba {item.need - item.have} ks (treba {item.need}, máme {item.have})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+          {tracked && missing.length === 0 && (
+            <p role="status" className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm">
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600" aria-hidden />
+              Všetko, čo sledujeme, máme na sklade.
+            </p>
+          )}
+
           <div className="overflow-x-auto rounded-xl border bg-surface">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="px-4 py-2 font-medium">Diel</th>
-                  <th className="px-4 py-2 text-right font-medium">Počet</th>
+                  <th className="px-4 py-2 text-right font-medium">Treba</th>
+                  <th className="px-4 py-2 text-right font-medium">Máme</th>
                 </tr>
               </thead>
               {groups.map((group) => (
                 <tbody key={group} className="divide-y border-b last:border-b-0">
                   <tr className="bg-muted/50">
-                    <th colSpan={2} className="px-4 py-1.5 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    <th colSpan={3} className="px-4 py-1.5 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                       <span className="inline-flex items-center gap-2">
                         <PartIcon kind={GROUP_ICONS[group] ?? 'accessory'} className="size-5" />
                         {group}
@@ -554,16 +552,32 @@ export function Calculator({ config }: { config: StageConfig }) {
                   </tr>
                   {plan.lines
                     .filter((line) => line.group === group)
-                    .map((line) => (
-                      <tr key={line.key}>
-                        <td className="px-4 py-2 font-medium">{line.label}</td>
-                        <td className="px-4 py-2 text-right font-semibold tabular-nums">{line.quantity}</td>
-                      </tr>
-                    ))}
+                    .map((line) => {
+                      const stock = have(line.equipmentId)
+                      const short = stock !== undefined && (totals.get(line.equipmentId) ?? line.quantity) > stock
+                      return (
+                        <tr key={line.key}>
+                          <td className="px-4 py-2 font-medium">{line.label}</td>
+                          <td className="px-4 py-2 text-right font-semibold tabular-nums">{line.quantity}</td>
+                          <td className={cn('px-4 py-2 text-right tabular-nums', short && 'font-semibold text-destructive')}>
+                            {stock === undefined ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1">
+                                {stock}
+                                {!short && <CheckCircle2 className="size-4 text-emerald-600" aria-label="stačí" />}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
                 </tbody>
               ))}
             </table>
           </div>
+
+          {!tracked && <p className="text-sm text-muted-foreground print:hidden">Počty kusov na sklade zadáva admin v časti Nivtec diely → Sklad. Potom tu uvidíte, čo chýba.</p>}
 
           <div className="flex flex-wrap gap-2 print:hidden">
             <Button variant="outline" onClick={() => void copy()}>

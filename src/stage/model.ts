@@ -1,9 +1,9 @@
 import { z } from 'zod'
 
 // ---------------------------------------------------------------------------
-// Nastavenie pódiového systému (Nivtec): z čoho sa pódium skladá a ku ktorej
-// technike v evidencii patrí každý diel. Prázdne equipmentId = diel sa ráta,
-// ale nepáruje sa s technikou (nedá sa skontrolovať, koľko ho máme).
+// Nastavenie pódiového systému (Nivtec): z čoho sa pódium skladá a koľko kusov
+// každého dielu máme. equipmentId je trvalé ID dielu (doplní sa samo), podľa neho
+// sa vedie počet kusov na sklade a kalkulačka ukáže, či stačí.
 //
 // Ako Nivtec funguje (podľa výrobcu a praxe):
 // - dosky sa spájajú do seba perom a drážkou s brzdou, spojky netreba;
@@ -43,10 +43,6 @@ const deckShape = part.extend({
   /** Rozmer v metroch; šírka je dlhšia strana. */
   widthM: meters,
   depthM: meters,
-  /** Trojuholník sa do obdĺžnika neskladá; pridáva sa ručne ako ďalšia doska. */
-  triangle: z.boolean(),
-  /** Koľko nôh potrebuje doska, keď stojí samostatne (trojuholník 3). */
-  legs: z.number().int().min(1).max(8),
 })
 export type DeckType = z.infer<typeof deckShape>
 
@@ -91,20 +87,13 @@ const configShape = {
   accessories: z
     .array(part.extend({ label: z.string().trim().min(1).max(80), basis: z.enum(ACCESSORY_BASES), quantity: ratio }))
     .max(40),
+  /** Koľko kusov dielu máme (podľa equipmentId); diel bez záznamu sa nekontroluje. */
+  stock: z.record(z.string(), z.number().int().min(0).max(100000)),
 }
 export const stageConfigSchema = z.object(configShape)
 export type StageConfig = z.infer<typeof stageConfigSchema>
 
-const none = { equipmentId: '' }
-const deck = (id: string, label: string, widthM: number, depthM: number, triangle = false): DeckType => ({
-  id,
-  label,
-  widthM,
-  depthM,
-  triangle,
-  legs: triangle ? 3 : 4,
-  equipmentId: '',
-})
+const deck = (id: string, label: string, widthM: number, depthM: number): DeckType => ({ id, label, widthM, depthM, equipmentId: '' })
 
 export const DEFAULT_STAGE_CONFIG: StageConfig = {
   name: 'Nivtec',
@@ -113,7 +102,6 @@ export const DEFAULT_STAGE_CONFIG: StageConfig = {
     deck('d1x1', 'Doska 1 × 1 m', 1, 1),
     deck('d2x05', 'Doska 2 × 0,5 m', 2, 0.5),
     deck('d1x05', 'Doska 1 × 0,5 m', 1, 0.5),
-    deck('tri', 'Trojuholník', 2, 1, true),
   ],
   legs: [20, 40, 60, 80, 100].map((heightCm) => ({ heightCm, equipmentId: '' })),
   skirts: [
@@ -138,7 +126,7 @@ export const DEFAULT_STAGE_CONFIG: StageConfig = {
     { fieldM: 1, minHeightCm: 101, maxHeightCm: 140, label: 'Výstuha pole 100/85, výška 100–140', equipmentId: '' },
   ],
   diagonalEvery: 1,
-  stairs: { stepDeckId: 'd1x05', stairLeg: none, railing: none, connector: { equipmentId: '', perStairs: 2 } },
+  stairs: { stepDeckId: 'd1x05', stairLeg: { equipmentId: '' }, railing: { equipmentId: '' }, connector: { equipmentId: '', perStairs: 2 } },
   riserWheel: { equipmentId: '', label: 'Noha s kolieskom' },
   accessories: [
     { label: 'Čapová spojka pre zábradlie', basis: 'railing', quantity: 2, equipmentId: '' },
@@ -147,12 +135,14 @@ export const DEFAULT_STAGE_CONFIG: StageConfig = {
     { label: 'Spojka pre zábradlie', basis: 'railingJoint', quantity: 1, equipmentId: '' },
     { label: 'Rohová spojka pre zábradlie', basis: 'railingCorner', quantity: 2, equipmentId: '' },
   ],
+  stock: {},
 }
 
 /**
  * Uložené nastavenie doplnené o predvolené hodnoty. Každá časť sa overuje zvlášť,
  * takže poškodená alebo zastaraná časť sa nahradí predvolenou a ostatné ostanú.
- * Staršie nastavenie s doskami deck2x1/deck1x1 sa prevedie na zoznam dosiek.
+ * Staršie nastavenie s doskami deck2x1/deck1x1 sa prevedie na zoznam dosiek
+ * a trojuholníky (už sa nepoužívajú) sa vynechajú.
  */
 export function readStageConfig(raw: unknown): StageConfig {
   const source = { ...(raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}) }
@@ -162,12 +152,67 @@ export function readStageConfig(raw: unknown): StageConfig {
       item.id === 'd2x1' ? { ...item, equipmentId: id('deck2x1') } : item.id === 'd1x1' ? { ...item, equipmentId: id('deck1x1') } : item,
     )
   }
+  if (Array.isArray(source.decks)) source.decks = source.decks.filter((item) => !(item && typeof item === 'object' && (item as { triangle?: unknown }).triangle === true))
   const result: Record<string, unknown> = {}
   for (const [key, schema] of Object.entries(configShape)) {
     const parsed = schema.safeParse(source[key])
     result[key] = parsed.success ? parsed.data : DEFAULT_STAGE_CONFIG[key as keyof StageConfig]
   }
-  return result as StageConfig
+  return withPartIds(result as StageConfig)
+}
+
+type StockPart = { id: string; label: string; group: string }
+
+/**
+ * Všetky diely nastavenia s ich ID, v poradí a skupinách ako v kalkulačke.
+ * fill = ID pre diel, ktorý ho ešte nemá (nový v nastavení).
+ */
+function partsOf(config: StageConfig, fill: (part: { equipmentId: string }, base: string) => string = (part) => part.equipmentId): StockPart[] {
+  const m = (value: number) => String(value).replace('.', ',')
+  const parts: StockPart[] = []
+  const push = (part: { equipmentId: string }, base: string, group: string, label: string) => parts.push({ id: fill(part, base), label, group })
+  config.decks.forEach((item) => push(item, `deck:${item.id}`, 'Dosky', item.label || `Doska ${m(item.widthM)} × ${m(item.depthM)} m`))
+  config.legs.forEach((item) => push(item, `leg:${item.heightCm}`, 'Nohy', `Noha ${item.heightCm} cm`))
+  config.laths.forEach((item) => push(item, `lath:${item.profile}:${item.lengthM}`, 'Lišty', item.label || `Lišta ${PROFILE_LABELS[item.profile]} ${m(item.lengthM)} m`))
+  config.skirts.forEach((item) =>
+    push(item, `skirt:${item.coversM}:${item.heightCm}`, 'Plachta', `Plachta na ${m(item.coversM)} m${item.heightCm ? ` (výška ${item.heightCm} cm)` : ''}`),
+  )
+  push(config.skirtClip, 'skirtClip', 'Plachta', 'Štipec na plachtu')
+  config.railings.forEach((item) => push(item, `railing:${item.coversM}`, 'Zábradlie', `Zábradlie ${item.label || `na ${m(item.coversM)} m`}`))
+  config.diagonals.forEach((item) =>
+    push(item, `diagonal:${item.fieldM}:${item.minHeightCm}`, 'Výstuhy', item.label || `Výstuha pole ${m(item.fieldM)} m, ${item.minHeightCm}–${item.maxHeightCm} cm`),
+  )
+  push(config.stairs.stairLeg, 'stairLeg', 'Schody', 'Schodisková noha')
+  push(config.stairs.railing, 'stairRailing', 'Schody', 'Zábradlie schodov')
+  push(config.stairs.connector, 'stairConnector', 'Schody', 'Spojka schodov k pódiu (110 mm)')
+  push(config.riserWheel, 'riserWheel', 'Rizery', config.riserWheel.label || 'Noha s kolieskom')
+  config.accessories.forEach((item, index) => push(item, `accessory:${index}`, 'Príslušenstvo', item.label || `Príslušenstvo ${index + 1}`))
+  return parts
+}
+
+/**
+ * Každý diel dostane trvalé ID (equipmentId), ak ho ešte nemá, a zo skladu sa vyhodia
+ * počty dielov, ktoré už v nastavení nie sú. ID sa po uložení nemení, ani keď sa zmení rozmer.
+ */
+export function withPartIds(config: StageConfig): StageConfig {
+  const next = structuredClone(config)
+  const used = new Set(partsOf(next).map((item) => item.id).filter(Boolean))
+  partsOf(next, (part, base) => {
+    if (part.equipmentId) return part.equipmentId
+    let id = base
+    for (let n = 2; used.has(id); n++) id = `${base}#${n}`
+    used.add(id)
+    part.equipmentId = id
+    return id
+  })
+  const ids = new Set(partsOf(next).map((item) => item.id))
+  next.stock = Object.fromEntries(Object.entries(next.stock).filter(([id]) => ids.has(id)))
+  return next
+}
+
+/** Diely na zadanie počtu kusov (nastavenie musí mať ID, napr. z readStageConfig alebo withPartIds). */
+export function stockParts(config: StageConfig): StockPart[] {
+  return partsOf(config)
 }
 
 /** Nové id druhu dosky, ktoré ešte nie je v zozname. */
@@ -213,8 +258,6 @@ export type StageRequest = {
   stairsToTop: boolean
   /** Zábradlie na schodoch: 0, 1 alebo 2 strany. */
   stairsRailingSides: number
-  /** Dosky navyše, ktoré sa do obdĺžnika neskladajú (trojuholníky a pod.). */
-  extraDecks: { deckId: string; count: number }[]
   catwalk: Catwalk | null
   risers: Riser[]
   /** Ktorými menšími doskami doplniť zvyšok (id z nastavenia); bez zadania všetkými. */
@@ -252,17 +295,16 @@ export const STEP_RISE_CM = 20
 const GRID = 0.5
 const EPS = 1e-9
 
-/** Obdĺžnikové dosky od najväčšej; hlavná je prvá obdĺžniková v nastavení. */
+/** Dosky od najväčšej; hlavná je prvá v nastavení. */
 function rectDecks(config: StageConfig, allowed?: string[]) {
-  const rects = config.decks.filter((item) => !item.triangle)
-  const [main, ...rest] = rects
+  const [main, ...rest] = config.decks
   const fillers = rest.filter((item) => !allowed || allowed.includes(item.id))
   return { main, fillers: fillers.sort((a, b) => b.widthM * b.depthM - a.widthM * a.depthM) }
 }
 
-/** Menšie dosky, ktorými sa dá doplniť zvyšok pódia (všetky obdĺžnikové okrem hlavnej). */
+/** Menšie dosky, ktorými sa dá doplniť zvyšok pódia (všetky okrem hlavnej). */
 export function fillerDecks(config: StageConfig) {
-  return config.decks.filter((item) => !item.triangle).slice(1)
+  return config.decks.slice(1)
 }
 
 /**
@@ -472,16 +514,6 @@ export function planStage(request: StageRequest, config: StageConfig): StagePlan
     if (riser.wheels) add('riserWheel', 'Rizery', config.riserWheel.label || 'Noha s kolieskom', points, config.riserWheel.equipmentId)
     else addLegs(riser.heightCm, points)
   }
-  let extraDecks = 0
-  for (const extra of request.extraDecks) {
-    const type = deckType(extra.deckId)
-    if (!type || extra.count < 1) continue
-    extraDecks += extra.count
-    add(`deck-${type.id}`, 'Dosky', type.label, extra.count, type.equipmentId)
-    // Doska navyše stojí pri pódiu a s ním sa delí o nohy na jednej hrane.
-    addLegs(heightCm, extra.count * Math.max(1, type.legs - 2))
-  }
-
   // Schody: stupne z vybranej dosky po 20 cm; prvý stojí na 4 nohách 20 cm, ďalšie na 2 nohách
   // svojej výšky a 2 schodiskových nohách zavesených na predchádzajúcom stupni.
   const step = deckType(config.stairs.stepDeckId) ?? rectDecks(config).fillers.at(-1) ?? rectDecks(config).main
@@ -586,7 +618,7 @@ export function planStage(request: StageRequest, config: StageConfig): StagePlan
 
   // Drobnosti podľa toho, na čo sa viažu.
   const basisCount: Record<AccessoryBasis, number> = {
-    deck: allDecks.length + extraDecks,
+    deck: allDecks.length,
     leg: legs,
     railing: railingPieces,
     railingJoint: joints,
