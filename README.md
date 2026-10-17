@@ -43,6 +43,9 @@ servisu a eventov). Tu je vytiahnutá samostatne pre našu skupinu.
 
 ## Čo je nové
 
+### 1.2.1
+- Oprava: v Sklade sa diely zdvojovali a nedal sa zadať počet, kým nebolo nastavenie Nivtec ešte ani raz uložené.
+
 ### 1.2.0
 - **Sklad** v Nivtec dieloch: admin zadá počet kusov každého dielu na firme.
 - Kalkulačka má stĺpec **Máme**, vypíše, čo chýba, a menšie dosky s 0 ks nepoužije.

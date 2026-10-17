@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { DEFAULT_STAGE_CONFIG, readStageConfig, type StageConfig } from '@/stage/model'
+import { readStageConfig, type StageConfig } from '@/stage/model'
 
 export const ROLES = ['admin', 'member'] as const
 export type Role = (typeof ROLES)[number]
@@ -48,7 +48,8 @@ export function memberError(error: unknown) {
 export async function fetchGroupConfig(client: SupabaseClient): Promise<StageConfig> {
   const { data, error } = await client.from('nivtec_settings').select('config').eq('id', 1).maybeSingle()
   if (error) throw error
-  return data ? readStageConfig(data.config) : DEFAULT_STAGE_CONFIG
+  // Aj predvolené nastavenie ide cez readStageConfig, aby diely mali ID (sklad, počty).
+  return readStageConfig(data?.config)
 }
 
 /** Najprv úprava, až potom vloženie: upsert by menil stĺpec id, na ktorý nie je právo. */

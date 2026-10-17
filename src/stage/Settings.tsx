@@ -98,7 +98,7 @@ const patchAt = <T,>(list: T[], index: number, patch: Partial<T>) => list.map((i
 
 /** Nastavenie pódiového systému Nivtec: diely, nohy, plachty, zábradlia, výstuhy, schody a príslušenstvo. */
 export function Settings({ initial, note, onSave }: { initial: StageConfig; note: string; onSave: (config: StageConfig) => Promise<boolean> }) {
-  const [config, setConfig] = useState(initial)
+  const [config, setConfig] = useState(() => withPartIds(initial))
   const [saved, setSaved] = useState<boolean | null>(null)
   const [saving, setSaving] = useState(false)
   const save = async () => {

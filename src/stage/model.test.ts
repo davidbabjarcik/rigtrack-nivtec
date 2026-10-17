@@ -176,6 +176,14 @@ describe('helpers', () => {
 })
 
 describe('sklad', () => {
+  it('aj predvolené nastavenie (ešte neuložené) má ID pri každom diele', () => {
+    for (const config of [readStageConfig(null), readStageConfig(undefined), withPartIds(DEFAULT_STAGE_CONFIG)]) {
+      const ids = stockParts(config).map((part) => part.id)
+      expect(ids.every(Boolean)).toBe(true)
+      expect(new Set(ids).size).toBe(ids.length)
+    }
+  })
+
   it('každý diel dostane jedinečné ID a to sa pri zmene rozmeru nemení', () => {
     const config = readStageConfig({})
     const ids = stockParts(config).map((part) => part.id)
