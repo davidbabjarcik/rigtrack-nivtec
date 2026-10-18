@@ -43,6 +43,9 @@ servisu a eventov). Tu je vytiahnutá samostatne pre našu skupinu.
 
 ## Čo je nové
 
+### 1.2.2
+- Kalkulačka si pamätá zadanie aj po prechode do Nastavenia a späť (aj po obnovení stránky); tlačidlo **Nové pódium** ho vymaže.
+
 ### 1.2.1
 - Oprava: v Sklade sa diely zdvojovali a nedal sa zadať počet, kým nebolo nastavenie Nivtec ešte ani raz uložené.
 

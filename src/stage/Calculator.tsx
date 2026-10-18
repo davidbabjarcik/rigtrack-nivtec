@@ -1,5 +1,6 @@
-import { AlertTriangle, CheckCircle2, Copy, PackageX, Plus, Printer, Trash2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Copy, PackageX, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import { clearStored, useStored } from '@/lib/useStored'
 import { Button } from '@/components/button'
 import { Field, SelectField } from '@/components/field'
 import { cn } from '@/lib/utils'
@@ -201,27 +202,41 @@ function listText(request: StageRequest, plan: StagePlan) {
 
 /** Kalkulačka pódia Nivtec: dosky, nohy, schody, plachty, zábradlie, výstuhy a príslušenstvo. */
 export function Calculator({ config }: { config: StageConfig }) {
+  // Nové pódium: zabudne uložené zadanie a formulár sa vytvorí znova s predvolenými hodnotami.
+  const [run, setRun] = useState(0)
+  return (
+    <CalculatorForm
+      key={run}
+      config={config}
+      onReset={() => {
+        clearStored()
+        setRun((n) => n + 1)
+      }}
+    />
+  )
+}
 
-  const [widthM, setWidth] = useState(6)
-  const [depthM, setDepth] = useState(4)
-  const [height, setHeight] = useState<number | null>(null)
-  const [orientation, setOrientation] = useState<Orientation>('auto')
-  const [skirt, setSkirt] = useState(false)
-  const [skirtSides, setSkirtSides] = useState<Side[]>(['front', 'left', 'right'])
-  const [railing, setRailing] = useState(false)
-  const [railingSides, setRailingSides] = useState<Side[]>(['back', 'left', 'right'])
-  const [stairs, setStairs] = useState<Stairs[]>([])
-  const [laths, setLaths] = useState(false)
-  const [lathSides, setLathSides] = useState<Side[]>(['front', 'left', 'right'])
-  const [catwalk, setCatwalk] = useState<Catwalk | null>(null)
-  const [risers, setRisers] = useState<Riser[]>([])
-  const [fillerIds, setFillerIds] = useState<string[] | null>(null)
+function CalculatorForm({ config, onReset }: { config: StageConfig; onReset: () => void }) {
+  const [widthM, setWidth] = useStored('width', 6)
+  const [depthM, setDepth] = useStored('depth', 4)
+  const [height, setHeight] = useStored<number | null>('height', null)
+  const [orientation, setOrientation] = useStored<Orientation>('orientation', 'auto')
+  const [skirt, setSkirt] = useStored('skirt', false)
+  const [skirtSides, setSkirtSides] = useStored<Side[]>('skirtSides', ['front', 'left', 'right'])
+  const [railing, setRailing] = useStored('railing', false)
+  const [railingSides, setRailingSides] = useStored<Side[]>('railingSides', ['back', 'left', 'right'])
+  const [stairs, setStairs] = useStored<Stairs[]>('stairs', [])
+  const [laths, setLaths] = useStored('laths', false)
+  const [lathSides, setLathSides] = useStored<Side[]>('lathSides', ['front', 'left', 'right'])
+  const [catwalk, setCatwalk] = useStored<Catwalk | null>('catwalk', null)
+  const [risers, setRisers] = useStored<Riser[]>('risers', [])
+  const [fillerIds, setFillerIds] = useStored<string[] | null>('fillerIds', null)
   // Pracuje sa len s tým, čo máme: menšie dosky s 0 ks na sklade sa predvolene nepoužijú.
   const defaultFillers = fillerDecks(config)
     .filter((deck) => (config.stock[deck.equipmentId] ?? 1) > 0)
     .map((deck) => deck.id)
-  const [stairsToTop, setStairsToTop] = useState(false)
-  const [stairsRailingSides, setStairsRailingSides] = useState(0)
+  const [stairsToTop, setStairsToTop] = useStored('stairsToTop', false)
+  const [stairsRailingSides, setStairsRailingSides] = useStored('stairsRailingSides', 0)
   const [copied, setCopied] = useState(false)
 
   const heights = [...new Set(config.legs.map((leg) => leg.heightCm))].sort((a, b) => a - b)
@@ -583,6 +598,15 @@ export function Calculator({ config }: { config: StageConfig }) {
             <Button variant="outline" onClick={() => void copy()}>
               <Copy className="size-4" aria-hidden />
               {copied ? 'Skopírované' : 'Kopírovať zoznam'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (window.confirm('Začať nové pódium? Zadanie sa vymaže.')) onReset()
+              }}
+            >
+              <RotateCcw className="size-4" aria-hidden />
+              Nové pódium
             </Button>
             <Button variant="outline" onClick={() => window.print()}>
               <Printer className="size-4" aria-hidden />
