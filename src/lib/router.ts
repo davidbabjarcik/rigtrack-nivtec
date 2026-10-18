@@ -3,14 +3,15 @@ import { useEffect, useState } from 'react'
 // Podstránky cez #/…: GitHub Pages nevie neznámu cestu presmerovať na index.html,
 // adresa za # sa na server neposiela, takže odkaz na podstránku funguje vždy.
 
-export type Route = 'calculator' | 'settings' | 'nivtec'
+export type Route = 'calculator' | 'settings' | 'nivtec' | 'reports'
 
-const PATHS: Record<Route, string> = { calculator: '#/', settings: '#/nastavenie', nivtec: '#/nivtec' }
+const PATHS: Record<Route, string> = { calculator: '#/', settings: '#/nastavenie', nivtec: '#/nivtec', reports: '#/hlasenia' }
 
 /** Podstránka z adresy; čokoľvek neznáme (aj tokeny z e-mailových odkazov Supabase) je kalkulačka. */
 export function parseRoute(hash: string): Route {
   if (hash.startsWith('#/nastavenie')) return 'settings'
   if (hash.startsWith('#/nivtec')) return 'nivtec'
+  if (hash.startsWith('#/hlasenia')) return 'reports'
   return 'calculator'
 }
 

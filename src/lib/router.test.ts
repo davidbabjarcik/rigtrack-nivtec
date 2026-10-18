@@ -5,6 +5,7 @@ describe('parseRoute', () => {
   it('rozozná podstránky', () => {
     expect(parseRoute('#/nastavenie')).toBe('settings')
     expect(parseRoute('#/nivtec')).toBe('nivtec')
+    expect(parseRoute('#/hlasenia')).toBe('reports')
     expect(parseRoute('#/')).toBe('calculator')
     expect(parseRoute('')).toBe('calculator')
   })

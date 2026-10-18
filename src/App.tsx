@@ -1,5 +1,5 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
-import { Calculator as CalculatorIcon, LogOut, Puzzle, Settings as SettingsIcon } from 'lucide-react'
+import { Bug, Calculator as CalculatorIcon, LogOut, Puzzle, Settings as SettingsIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AuthLayout } from '@/auth/AuthLayout'
 import { LoginPage } from '@/auth/LoginPage'
@@ -15,6 +15,7 @@ import { routeHref, useRoute, type Route } from '@/lib/router'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { ReportsPage } from '@/reports/ReportsPage'
 import { Calculator } from '@/stage/Calculator'
 import type { StageConfig } from '@/stage/model'
 import { Settings as NivtecParts } from '@/stage/Settings'
@@ -23,6 +24,7 @@ const NAV: { route: Route; label: string; icon: typeof CalculatorIcon; adminOnly
   { route: 'calculator', label: 'Kalkulačka', icon: CalculatorIcon },
   { route: 'nivtec', label: 'Nivtec diely', icon: Puzzle, adminOnly: true },
   { route: 'settings', label: 'Nastavenie', icon: SettingsIcon },
+  { route: 'reports', label: 'Hlásenia', icon: Bug },
 ]
 
 function Loading() {
@@ -53,6 +55,11 @@ function Main({ client, session }: { client: SupabaseClient; session: Session })
   const [failed, setFailed] = useState(false)
   // Zvýši sa po uložení, aby sa formulár dielov naplnil uloženými hodnotami.
   const [saved, setSaved] = useState(0)
+  // Odkiaľ prišiel na hlásenie chyby (pripojí sa k hláseniu).
+  const [lastPage, setLastPage] = useState<Route>('calculator')
+  useEffect(() => {
+    if (route !== 'reports') setLastPage(route)
+  }, [route])
 
   useEffect(() => {
     let active = true
@@ -123,7 +130,9 @@ function Main({ client, session }: { client: SupabaseClient; session: Session })
       </nav>
 
       <main className="flex-1">
-        {route === 'settings' ? (
+        {route === 'reports' ? (
+          <ReportsPage client={client} isAdmin={isAdmin} myUserId={session.user.id} fromPage={lastPage} />
+        ) : route === 'settings' ? (
           <SettingsPage client={client} session={session} role={role} />
         ) : route === 'nivtec' ? (
           isAdmin ? (

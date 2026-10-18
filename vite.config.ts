@@ -15,4 +15,10 @@ export default defineConfig({
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
+  test: {
+    // Databázové testy si v beforeEach stavajú celú schému v PGlite; pri paralelnom behu
+    // to za predvolených 10 s nemusia stihnúť (rovnako ako v RigTracku).
+    hookTimeout: 60_000,
+    testTimeout: 30_000,
+  },
 })

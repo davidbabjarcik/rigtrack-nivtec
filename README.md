@@ -39,9 +39,15 @@ servisu a eventov). Tu je vytiahnutá samostatne pre našu skupinu.
 - 🔐 **Prihlásenie a skupina:** do aplikácie sa dostanú len pozvaní ľudia; admin pridáva členov a mení roly
 - 🧩 **Nivtec diely (len admin):** vlastné rozmery dosiek, nôh, plachiet či príslušenstva, spoločné pre celú skupinu
 - 📦 **Sklad:** admin zadá, koľko kusov každého dielu firma má; kalkulačka ukáže, čo chýba, a dosky, ktoré nemáme, nepoužije
+- 🐞 **Hlásenie chýb:** člen nahlási chybu (verzia, stránka a prehliadač sa pripoja samy), admin mení stav a odpovedá
 - 🌙 Svetlý aj tmavý režim, funguje na mobile
 
 ## Čo je nové
+
+### 1.3.0
+- **Hlásenia:** nová podstránka na hlásenie chýb. K hláseniu sa samo pripojí verzia, stránka, prehliadač a posledná chyba v aplikácii.
+- Hlásenia vidí celá skupina; admin mení stav (Nové, Rieši sa, Hotové) a píše odpoveď.
+- Treba spustiť `supabase/migrations/0003_hlasenia.sql`.
 
 ### 1.2.2
 - Kalkulačka si pamätá zadanie aj po prechode do Nastavenia a späť (aj po obnovení stránky); tlačidlo **Nové pódium** ho vymaže.
@@ -101,7 +107,7 @@ Dnu sa dostane len člen skupiny:
 
 1. Na [supabase.com](https://supabase.com) vytvor projekt.
 2. V **SQL Editor** spusti po poradí súbory zo [`supabase/migrations`](supabase/migrations):
-   `0001_init.sql`, potom `0002_skupina.sql`.
+   `0001_init.sql`, `0002_skupina.sql`, potom `0003_hlasenia.sql`.
 3. Pridaj prvého admina (v SQL Editore, so svojím e-mailom):
    ```sql
    insert into public.members (email, role) values ('tvoj@email.sk', 'admin');
@@ -134,7 +140,7 @@ Pri zmene Supabase projektu ich uprav tam.
 ### Testy databázy
 
 `npm test` spustí aj testy SQL migrácií v [PGlite](https://pglite.dev) (Postgres v Node.js):
-registrácia len na pozvánku, roly, posledný admin a spoločné nastavenie.
+registrácia len na pozvánku, roly, posledný admin, spoločné nastavenie a hlásenia chýb.
 
 ## Technológie
 
